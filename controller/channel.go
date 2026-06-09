@@ -677,6 +677,10 @@ func AddChannel(c *gin.Context) {
 		return
 	}
 	service.ResetProxyClientCache()
+	// MaaS: 通知 maas-server 渠道创建
+	for _, ch := range channels {
+		go service.NotifyMaasChannelChange("channel_create", &ch)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -687,12 +691,18 @@ func AddChannel(c *gin.Context) {
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	channel := model.Channel{Id: id}
+	// MaaS: 通知 maas-server 渠道删除（在删除前获取信息）
+	existingChannel, _ := model.GetChannelById(id, true)
 	err := channel.Delete()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.InitChannelCache()
+	// MaaS: 通知 maas-server 渠道删除
+	if existingChannel != nil {
+		go service.NotifyMaasChannelChange("channel_delete", existingChannel)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -981,6 +991,8 @@ func UpdateChannel(c *gin.Context) {
 	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
+	// MaaS: 通知 maas-server 渠道更新
+	go service.NotifyMaasChannelChange("channel_update", &channel.Channel)
 	channel.Key = ""
 	clearChannelInfo(&channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
