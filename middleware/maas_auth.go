@@ -174,6 +174,7 @@ func setupMaasJwtContext(c *gin.Context, claims *MaasJwtClaims) {
 	c.Set("maas_tenant_id", claims.TenantId)
 	c.Set("maas_dept_id", claims.DeptId)
 	c.Set("maas_data_scope", claims.DataScope)
+	c.Set("maas_dept_scope_ids", claims.DeptScopeIds)
 	c.Set("maas_permissions", claims.Permissions)
 	c.Set("maas_source", claims.Source)
 	c.Set("maas_model_whitelist", claims.ModelWhitelist)

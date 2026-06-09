@@ -1,10 +1,12 @@
 package model
 
 import (
+	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 )
 
@@ -98,4 +100,68 @@ func TestTenantCallbacksRegistration(t *testing.T) {
 	// RegisterTenantCallbacks 在未启用时不应注册回调
 	// 但函数调用不应出错
 	RegisterTenantCallbacks(db)
+}
+
+func TestDeptScopeFilter_All(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("maas_data_scope", "1") // ALL
+	c.Set("maas_dept_id", int64(10))
+
+	cond, args := DeptScopeFilter(c, "tokens")
+	assert.Equal(t, "", cond)
+	assert.Nil(t, args)
+}
+
+func TestDeptScopeFilter_DeptOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("maas_data_scope", "3") // DEPT_ONLY
+	c.Set("maas_dept_id", int64(10))
+
+	cond, args := DeptScopeFilter(c, "tokens")
+	assert.Equal(t, "tokens.dept_id = ?", cond)
+	assert.Equal(t, []any{int64(10)}, args)
+}
+
+func TestDeptScopeFilter_DeptCustom(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("maas_data_scope", "2") // DEPT_CUSTOM
+	c.Set("maas_dept_id", int64(10))
+	c.Set("maas_dept_scope_ids", "10,20,30")
+
+	cond, args := DeptScopeFilter(c, "")
+	assert.Contains(t, cond, "dept_id IN")
+	assert.Len(t, args, 3)
+	assert.Equal(t, int64(10), args[0])
+	assert.Equal(t, int64(20), args[1])
+	assert.Equal(t, int64(30), args[2])
+}
+
+func TestDeptScopeFilter_Self(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("maas_data_scope", "5") // SELF
+	c.Set("maas_dept_id", int64(10))
+
+	cond, args := DeptScopeFilter(c, "tokens")
+	assert.Equal(t, "", cond) // SELF 由业务逻辑处理
+	assert.Nil(t, args)
+}
+
+func TestGetDataScopeFromContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// 无 context
+	assert.Equal(t, 5, GetDataScopeFromContext(nil))
+
+	// 有 data_scope
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("maas_data_scope", "3")
+	assert.Equal(t, 3, GetDataScopeFromContext(c))
+
+	// 空 data_scope 默认 SELF
+	c2, _ := gin.CreateTestContext(httptest.NewRecorder())
+	assert.Equal(t, 5, GetDataScopeFromContext(c2))
 }

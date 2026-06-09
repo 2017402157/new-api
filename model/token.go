@@ -29,6 +29,7 @@ type Token struct {
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	TenantId           int64          `json:"tenant_id" gorm:"index;default:0"` // MaaS: 租户隔离
+	DeptId             int64          `json:"dept_id" gorm:"index;default:0"`   // MaaS: 部门隔离
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 

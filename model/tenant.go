@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,126 @@ func GetTenantIdFromContext(c *gin.Context) int64 {
 		return 0
 	}
 	return c.GetInt64("maas_tenant_id")
+}
+
+// GetDeptIdFromContext 从 gin.Context 获取当前部门 ID
+func GetDeptIdFromContext(c *gin.Context) int64 {
+	if c == nil {
+		return 0
+	}
+	return c.GetInt64("maas_dept_id")
+}
+
+// GetDataScopeFromContext 从 gin.Context 获取当前数据权限范围
+// 返回 yudao-cloud DataScopeEnum 的整数值：
+// 1=ALL, 2=DEPT_CUSTOM, 3=DEPT_ONLY, 4=DEPT_AND_CHILD, 5=SELF
+func GetDataScopeFromContext(c *gin.Context) int {
+	if c == nil {
+		return 5 // 默认 SELF（最严格）
+	}
+	str := c.GetString("maas_data_scope")
+	if str == "" {
+		return 5
+	}
+	val := 0
+	fmt.Sscanf(str, "%d", &val)
+	if val == 0 {
+		return 5
+	}
+	return val
+}
+
+// DataScope 常量（与 yudao-cloud DataScopeEnum 对齐）
+const (
+	DataScopeAll          = 1 // 全部数据权限
+	DataScopeDeptCustom   = 2 // 指定部门数据权限
+	DataScopeDeptOnly     = 3 // 部门数据权限
+	DataScopeDeptAndChild = 4 // 部门及以下数据权限
+	DataScopeSelf         = 5 // 仅本人数据权限
+)
+
+// DeptScopeFilter 根据数据权限范围构建部门过滤条件
+// 返回 (condition, args) 对，调用方可以用 db.Where(condition, args...) 追加
+//
+// data_scope 语义：
+//   - ALL(1):          无部门过滤
+//   - DEPT_CUSTOM(2):  dept_id IN (dept_scope_ids)，需要从 context 获取 dept_scope_ids
+//   - DEPT_ONLY(3):    dept_id = 当前部门 ID
+//   - DEPT_AND_CHILD(4): dept_id IN (当前部门 + 子部门 IDs)
+//   - SELF(5):         created_by = 当前用户 ID（由具体业务逻辑处理）
+func DeptScopeFilter(c *gin.Context, tableName string) (string, []any) {
+	if c == nil {
+		return "", nil
+	}
+
+	dataScope := GetDataScopeFromContext(c)
+	deptId := GetDeptIdFromContext(c)
+
+	switch dataScope {
+	case DataScopeAll:
+		return "", nil
+
+	case DataScopeDeptCustom:
+		deptScopeIds := c.GetString("maas_dept_scope_ids")
+		if deptScopeIds == "" {
+			return "", nil
+		}
+		// dept_scope_ids 格式: "10,20,30"
+		ids := strings.Split(deptScopeIds, ",")
+		placeholders := make([]string, len(ids))
+		args := make([]any, len(ids))
+		for i, id := range ids {
+			placeholders[i] = "?"
+			var v int64
+			fmt.Sscanf(strings.TrimSpace(id), "%d", &v)
+			args[i] = v
+		}
+		prefix := ""
+		if tableName != "" {
+			prefix = tableName + "."
+		}
+		return fmt.Sprintf("%sdept_id IN (%s)", prefix, strings.Join(placeholders, ",")), args
+
+	case DataScopeDeptOnly:
+		prefix := ""
+		if tableName != "" {
+			prefix = tableName + "."
+		}
+		return fmt.Sprintf("%sdept_id = ?", prefix), []any{deptId}
+
+	case DataScopeDeptAndChild:
+		// 简化实现：使用 dept_scope_ids（包含当前部门+子部门）
+		deptScopeIds := c.GetString("maas_dept_scope_ids")
+		if deptScopeIds != "" {
+			ids := strings.Split(deptScopeIds, ",")
+			placeholders := make([]string, len(ids))
+			args := make([]any, len(ids))
+			for i, id := range ids {
+				placeholders[i] = "?"
+				var v int64
+				fmt.Sscanf(strings.TrimSpace(id), "%d", &v)
+				args[i] = v
+			}
+			prefix := ""
+			if tableName != "" {
+				prefix = tableName + "."
+			}
+			return fmt.Sprintf("%sdept_id IN (%s)", prefix, strings.Join(placeholders, ",")), args
+		}
+		// 无 dept_scope_ids 时，退化为 DEPT_ONLY
+		prefix := ""
+		if tableName != "" {
+			prefix = tableName + "."
+		}
+		return fmt.Sprintf("%sdept_id = ?", prefix), []any{deptId}
+
+	case DataScopeSelf:
+		// SELF 由具体业务逻辑处理（通常在查询中添加 user_id 过滤）
+		return "", nil
+
+	default:
+		return "", nil
+	}
 }
 
 // TenantScope 返回带租户过滤的 DB 实例
