@@ -52,6 +52,7 @@ type Log struct {
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	TenantId          int64  `json:"tenant_id" gorm:"index;default:0"` // MaaS: 租户隔离
 	Other             string `json:"other"`
 }
 
