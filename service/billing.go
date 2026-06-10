@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -66,6 +68,8 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 				checkAndSendQuotaNotify(relayInfo, actualQuota-preConsumed, preConsumed)
 			}
 		}
+		// MaaS: 记录租户用量
+		recordMaasUsageFromRelay(ctx, relayInfo, actualQuota)
 		return nil
 	}
 
@@ -74,5 +78,38 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	if quotaDelta != 0 {
 		return PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
 	}
+	// MaaS: 记录租户用量（回退路径）
+	recordMaasUsageFromRelay(ctx, relayInfo, actualQuota)
 	return nil
+}
+
+// recordMaasUsageFromRelay 从 relayInfo 记录 MaaS 租户用量
+func recordMaasUsageFromRelay(c *gin.Context, relayInfo *relaycommon.RelayInfo, quota int) {
+	if relayInfo == nil || relayInfo.UserId == 0 || c == nil {
+		return
+	}
+	// 检查是否为 MaaS 请求
+	tenantIdVal, exists := c.Get("maas_tenant_id")
+	if !exists {
+		return
+	}
+	tenantId, ok := tenantIdVal.(int64)
+	if !ok || tenantId == 0 {
+		return
+	}
+
+	// 从 gin context 获取 token 统计信息
+	promptTokens := common.GetContextKeyInt(c, constant.ContextKeyPromptTokens)
+	modelName := relayInfo.OriginModelName
+
+	go func() {
+		record := &MaasUsageRecord{
+			TenantId:     tenantId,
+			UserId:       relayInfo.UserId,
+			Model:        modelName,
+			QuotaUsed:    quota,
+			PromptTokens: promptTokens,
+		}
+		_ = RecordMaasUsage(record)
+	}()
 }

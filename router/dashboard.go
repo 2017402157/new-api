@@ -20,4 +20,13 @@ func SetDashboardRouter(router *gin.Engine) {
 		apiRouter.GET("/dashboard/billing/usage", controller.GetUsage)
 		apiRouter.GET("/v1/dashboard/billing/usage", controller.GetUsage)
 	}
+
+	// MaaS 用量统计和配额管理路由
+	maasUsageRouter := router.Group("/maas")
+	maasUsageRouter.Use(middleware.CORS())
+	maasUsageRouter.Use(middleware.MaasJwtAuth())
+	{
+		maasUsageRouter.GET("/usage/stats", controller.GetMaasUsageStats)
+		maasUsageRouter.POST("/quota/set", controller.SetMaasTenantQuota)
+	}
 }
